@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>BLE Signal Strength</title>
+  </head>
+  <body>
+    <h1>BLE Signal Strength</h1>
+    <ul id="bleDataList"></ul>
+
+    <script>
+      const bleDataList = document.getElementById('bleDataList');
+      const ws = new WebSocket('ws://your-nodejs-server-address:port');
+
+      ws.onmessage = (event) => {
+        const bleData = JSON.parse(event.data);
+        bleDataList.innerHTML = '';
+        for (const deviceAddress in bleData) {
+          const listItem = document.createElement('li');
+          listItem.textContent = `${deviceAddress}: RSSI ${bleData[deviceAddress]}`;
+          bleDataList.appendChild(listItem);
+        }
+      };
+    </script>
+  </body>
+</html>
