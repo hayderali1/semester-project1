@@ -1,49 +1,52 @@
-#include <ArduinoHttpClient.h>
 #include <BLEDevice.h>
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
-#include <sstream>
 #include <WiFi.h>
 
 const char* ssid = "Zyxel_D9B1";
 const char* password = "UNHTF48UEY";
-const char* mobileServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-const char* serverAddress = "192.168.1.140";
+const char serverAddress[] = "192.168.1.140";
 const int serverPort = 8081;
-const char* serverPath = "/update-location";
+const char serverPath[] = "/update-location";
+const char DEVICE_NAME[] = "MobileESP32";
 
 BLEScan* pBLEScan;
-ArduinoHttpClient client; // Declare the client variable outside of the onResult() method
+bool deviceFound = false;
 
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
- public:
+public:
   void onResult(BLEAdvertisedDevice advertisedDevice) {
-    std::stringstream requestBody;
-    requestBody << "deviceAddress=" << advertisedDevice.getAddress().toString() << "&rssi=" << advertisedDevice.getRSSI();
+    if (advertisedDevice.haveName() && advertisedDevice.getName() == DEVICE_NAME) {
+      deviceFound = true;
+      BLEDevice::getScan()->stop();
 
-    client.begin(serverAddress, serverPort);
-    client.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    int httpResponseCode = client.POST(serverPath, requestBody);
+      int8_t rssi = advertisedDevice.getRSSI();
+      char postData[32];
+      snprintf(postData, sizeof(postData), "device=%s&rssi=%d", advertisedDevice.getAddress().toString().c_str(), rssi);
 
-    if (httpResponseCode > 0) {
-      Serial.println(F("Data sent successfully"));
-    } else {
-      Serial.print(F("Error on sending data. HTTP Error: "));
-      Serial.println(httpResponseCode);
+      WiFiClient client;
+      if (client.connect(serverAddress, serverPort)) {
+        char requestHeader[64];
+        snprintf(requestHeader, sizeof(requestHeader), "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: %d\r\n\r\n", serverPath, serverAddress, strlen(postData));
+
+        client.print(requestHeader);
+        client.print(postData);
+
+        while (client.available()) {
+          client.read();
+        }
+      }
+      client.stop();
     }
-
-    client.end();
   }
 };
 
 void setup() {
-  Serial.begin(115200);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
-    Serial.println(F("Connecting to WiFi..."));
   }
-  Serial.println(F("Connected to WiFi"));
+
   BLEDevice::init("");
   pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
@@ -52,5 +55,9 @@ void setup() {
 }
 
 void loop() {
-  delay(5000); // Adjust the scan interval as needed
+  if (deviceFound) {
+    // Do something when the device is found
+  }
+
+  delay(5000);
 }
