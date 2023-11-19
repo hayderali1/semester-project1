@@ -2,13 +2,13 @@
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
 
 const char* ssid = "Zyxel_D9B1";
 const char* password = "UNHTF48UEY";
-const char serverAddress[] = "192.168.1.140";
-const int serverPort = 8081;
-const char serverPath[] = "/update-location";
-const char SERVICE_UUID[] = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const char* serverAddress = "192.168.1.140";
+const int serverPort = 3000;
+const char* serverPath = "/update-location";  // Use the actual endpoint
 
 BLEScan* pBLEScan;
 bool deviceFound = false;
@@ -16,7 +16,7 @@ bool deviceFound = false;
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
 public:
   void onResult(BLEAdvertisedDevice advertisedDevice) {
-    if (advertisedDevice.haveServiceUUID() && advertisedDevice.getServiceUUID().equals(BLEUUID(SERVICE_UUID))) {
+    if (advertisedDevice.haveServiceUUID() && advertisedDevice.getServiceUUID().equals(BLEUUID("4fafc201-1fb5-459e-8fcc-c5c9c331914b"))) {
       deviceFound = true;
       BLEDevice::getScan()->stop();
 
@@ -27,21 +27,36 @@ public:
       WiFiClient client;
       if (client.connect(serverAddress, serverPort)) {
         Serial.println("Connected to server. Sending data...");
-        char postData[32];
-        snprintf(postData, sizeof(postData), "device=%s&rssi=%d", advertisedDevice.getAddress().toString().c_str(), rssi);
 
-        char requestHeader[64];
-        snprintf(requestHeader, sizeof(requestHeader), "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: %d\r\n\r\n", serverPath, serverAddress, strlen(postData));
+        // Construct the data to be sent
+        String postData;
+        postData.reserve(100); // Adjust the size based on your expected maximum length
 
-        client.print(requestHeader);
-        client.print(postData);
+        // Add ESP32 address to the data
+        postData = "device=" + String(advertisedDevice.getAddress().toString().c_str()) + "&rssi=" + String(rssi) + "&esp32_address=" + WiFi.macAddress();
 
-        while (client.available()) {
-          client.read();
+        // Set up the HTTP POST request
+        HTTPClient http;
+        http.begin("http://" + String(serverAddress) + ":" + String(serverPort) + serverPath);
+        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+        // Send the POST request
+        int httpResponseCode = http.POST(postData);
+
+        // Check for a successful response
+        if (httpResponseCode > 0) {
+          Serial.print("HTTP Response code: ");
+          Serial.println(httpResponseCode);
+        } else {
+          Serial.print("HTTP POST failed, error: ");
+          Serial.println(httpResponseCode);
         }
-        Serial.println("Data sent to server.");
+
+        // End the HTTP request
+        http.end();
       } else {
-        Serial.println("Failed to connect to server.");
+        Serial.print("Failed to connect to server. Connection status: ");
+        Serial.println(client.connected());  // Print the connection status for debugging
       }
       client.stop();
     } else {

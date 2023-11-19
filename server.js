@@ -1,14 +1,15 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const http = require('http');
-const WebSocket = require('ws');
+const cors = require('cors');
+
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
 
-// Store BLE signal strength data
+// Store BLE signal strength data and historical RSSI signals
 const bleData = {};
 
+app.use(cors());  // Allow cross-origin requests
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
@@ -16,20 +17,33 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 
-app.post('/updateLocation', (req, res) => {
-  const deviceAddress = req.body.deviceAddress;
+// New route to serve RSSI signals for tracking
+app.get('/rssi', (req, res) => {
+  res.json(bleData);
+});
+
+// New route to handle data from stationary ESP32
+app.post('/update-location', (req, res) => {
+  const esp32Address = req.body.esp32_address;
+  const deviceAddress = req.body.device;
   const rssi = req.body.rssi;
-  bleData[deviceAddress] = rssi;
-  wss.clients.forEach((client) => {
-    client.send(JSON.stringify(bleData));
-  });
+  console.log('Received data from stationary ESP32:', esp32Address, 'Device:', deviceAddress, 'RSSI:', rssi);
+
+  // Update the historical RSSI signals
+  if (!bleData[deviceAddress]) {
+    bleData[deviceAddress] = { rssi: [] };
+  }
+
+  bleData[deviceAddress].rssi.push({ rssi, esp32Address });
+
+  // Limit the number of stored RSSI signals to avoid excessive data
+  if (bleData[deviceAddress].rssi.length > 10) {
+    bleData[deviceAddress].rssi.shift(); // Remove the oldest RSSI signal
+  }
+
   res.sendStatus(200);
 });
 
-wss.on('connection', (ws) => {
-  ws.send(JSON.stringify(bleData));
-});
-
-server.listen(3000, () => {
+server.listen(3000, '0.0.0.0', () => {
   console.log('Node.js server is running on port 3000');
 });
