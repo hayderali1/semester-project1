@@ -4,8 +4,8 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-const char* ssid = "Zyxel_D9B1";
-const char* password = "UNHTF48UEY";
+const char* ssid = "HUAWEI P30 lite";
+const char* password = "7319174eaa25";
 const char* serverAddress = "192.168.1.140";
 const int serverPort = 3000;
 const char* serverPath = "/update-location";  // Use the actual endpoint
