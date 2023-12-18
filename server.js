@@ -41,7 +41,20 @@ app.post('/update-location', (req, res) => {
     bleData[deviceAddress].rssi.shift(); // Remove the oldest RSSI signal
   }
 
+  // Emit the updated data to connected clients (sockets)
+  io.emit('updateCanvas', bleData);
+
   res.sendStatus(200);
+});
+
+// Socket.io setup
+const io = require('socket.io')(server);
+
+io.on('connection', (socket) => {
+  console.log('A user connected');
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
 });
 
 server.listen(3000, '0.0.0.0', () => {

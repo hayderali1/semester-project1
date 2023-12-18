@@ -3,97 +3,44 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 Mobile Tracking</title>
-  <style>
-    #mapCanvas {
-      border: 1px solid #ccc;
-    }
-  </style>
+  <title>Position Tracking</title>
 </head>
 <body>
-  <h1>ESP32 Mobile Tracking</h1>
-  <canvas id="mapCanvas" width="500" height="300"></canvas>
+  <h1>Position Tracking</h1>
+  <canvas id="trackingCanvas" width="500" height="500" style="border:1px solid #000;"></canvas>
 
+  <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
   <script>
-    const canvas = document.getElementById('mapCanvas');
-    const ctx = canvas.getContext('2d');
-    const mobileESP32 = {
-      x: 100, // Initial X position
-      y: 150, // Fixed Y position for simplicity
-      rssiHistory: []
-    };
+    const canvas = document.getElementById('trackingCanvas');
+    const context = canvas.getContext('2d');
 
-    function updateMap() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
+    const socket = io();
 
-      // Draw stationary ESP32 devices
-      drawStationaryDevice(ctx, 100, 50);
-      drawStationaryDevice(ctx, 400, 50);
-      drawStationaryDevice(ctx, 400, 250);
-      drawStationaryDevice(ctx, 100, 250);
+    // Socket.io event listener for canvas updates
+    socket.on('updateCanvas', (bleData) => {
+      updateCanvas(bleData);
+    });
 
-      // Draw the mobile ESP32 device
-      drawMobileDevice(ctx, mobileESP32.x, mobileESP32.y);
+    function updateCanvas(bleData) {
+      console.log('Updating canvas with data:', bleData);
 
-      // Update position based on RSSI data
-      const latestRSSI = getLatestRSSI(); // Implement this function based on your data structure
-      mobileESP32.rssiHistory.push(latestRSSI);
-      mobileESP32.x = calculateXPosition();
-      drawSmoothTrail(ctx, mobileESP32.rssiHistory);
+      // Clear the canvas
+      context.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Trim RSSI history to keep only the last few data points
-      if (mobileESP32.rssiHistory.length > 20) {
-        mobileESP32.rssiHistory.shift();
+      // Draw mobile based on RSSI data
+      for (const deviceAddress in bleData) {
+        const rssiData = bleData[deviceAddress].rssi;
+        if (rssiData.length > 0) {
+          const latestRssi = rssiData[rssiData.length - 1];
+          const x = Math.random() * canvas.width;
+          const y = Math.random() * canvas.height;
+
+          // Adjust the position based on RSSI or any other logic
+          // Example: context.arc(x, y, 10, 0, 2 * Math.PI);
+          context.fillRect(x, y, 20, 20);
+        }
       }
-
-      setTimeout(updateMap, 1000 / 60); // Update approximately 60 times per second
     }
-
-    function drawStationaryDevice(ctx, x, y) {
-      ctx.fillStyle = 'blue';
-      ctx.fillRect(x - 5, y - 5, 10, 10);
-    }
-
-    function drawMobileDevice(ctx, x, y) {
-      ctx.fillStyle = 'red';
-      ctx.fillRect(x - 5, y - 5, 10, 10);
-    }
-
-    function drawSmoothTrail(ctx, rssiHistory) {
-      // Draw a smooth curve connecting the previous positions
-      ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
-      ctx.lineWidth = 2;
-
-      ctx.beginPath();
-      ctx.moveTo(rssiHistory[0] * 5 + 100, 150);
-
-      for (let i = 1; i < rssiHistory.length - 2; i++) {
-        const xc = (rssiHistory[i] * 5 + 100 + rssiHistory[i + 1] * 5 + 100) / 2;
-        const yc = (150 + rssiHistory[i + 1] * 5 + 100 + rssiHistory[i + 2] * 5 + 100) / 2;
-        ctx.quadraticCurveTo(rssiHistory[i] * 5 + 100, 150, xc, yc);
-      }
-
-      // Connect the last two points with a straight line
-      ctx.lineTo(rssiHistory[rssiHistory.length - 2] * 5 + 100, 150);
-      ctx.stroke();
-    }
-
-    function calculateXPosition() {
-      // Calculate the X position based on the average of the last few RSSI values
-      const avgRSSI = mobileESP32.rssiHistory.reduce((sum, rssi) => sum + rssi, 0) / mobileESP32.rssiHistory.length;
-
-      // This is a placeholder, adjust according to your needs
-      return 100 + avgRSSI * 5;
-    }
-
-    // Implement this function based on your data structure
-    function getLatestRSSI() {
-      // Replace this with the actual logic to get the latest RSSI value
-      // You might need to access your data structure or make a server request
-      return Math.random() * 20 - 10; // Placeholder, generates a random value between -10 and 10
-    }
-
-    updateMap();
   </script>
 </body>
 </html>
