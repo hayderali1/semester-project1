@@ -3,43 +3,93 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Position Tracking</title>
+  <title>ESP32 Position Tracking</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f0f0f0;
+    }
+
+    canvas {
+      border: 1px solid #ccc;
+    }
+  </style>
 </head>
 <body>
-  <h1>Position Tracking</h1>
-  <canvas id="trackingCanvas" width="500" height="500" style="border:1px solid #000;"></canvas>
+  <h1>ESP32 Position Tracking</h1>
+  <canvas id="positionCanvas" width="600" height="500"></canvas>
 
-  <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+  <!-- Include Socket.IO library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.1.2/socket.io.js"></script>
+
   <script>
-    const canvas = document.getElementById('trackingCanvas');
-    const context = canvas.getContext('2d');
+    const canvas = document.getElementById('positionCanvas');
+    const ctx = canvas.getContext('2d');
+    let stationaryDevices = {};
 
+    // Connect to the Socket.IO server
     const socket = io();
 
-    // Socket.io event listener for canvas updates
-    socket.on('updateCanvas', (bleData) => {
-      updateCanvas(bleData);
+    // Check if the Socket.IO connection is successful
+    socket.on('connect', () => {
+      console.log('Connected to Socket.IO server');
     });
 
-    function updateCanvas(bleData) {
-      console.log('Updating canvas with data:', bleData);
+    // Update canvas when mobile positions are received
+    socket.on('updateCanvas', (data) => {
+      stationaryDevices = data.stationaryDevices;
+      drawCanvas(stationaryDevices, data.bleData);
+    });
 
-      // Clear the canvas
-      context.clearRect(0, 0, canvas.width, canvas.height);
+    // Update canvas when mobile positions are received
+    socket.on('updateMobilePositions', (updatedBleData) => {
+      drawCanvas(stationaryDevices, updatedBleData);
+    });
 
-      // Draw mobile based on RSSI data
-      for (const deviceAddress in bleData) {
-        const rssiData = bleData[deviceAddress].rssi;
-        if (rssiData.length > 0) {
-          const latestRssi = rssiData[rssiData.length - 1];
-          const x = Math.random() * canvas.width;
-          const y = Math.random() * canvas.height;
+    // Function to draw the canvas with stationary and mobile devices
+    function drawCanvas(stationaryDevices, mobileDevices) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-          // Adjust the position based on RSSI or any other logic
-          // Example: context.arc(x, y, 10, 0, 2 * Math.PI);
-          context.fillRect(x, y, 20, 20);
+      // Draw stationary devices
+      for (const key in stationaryDevices) {
+        if (stationaryDevices.hasOwnProperty(key)) {
+          const { x: sx, y: sy } = stationaryDevices[key];
+          drawDevice(key, sx, sy);
         }
       }
+
+      // Draw mobile devices
+      for (const deviceAddress in mobileDevices) {
+        if (mobileDevices.hasOwnProperty(deviceAddress)) {
+          const position = mobileDevices[deviceAddress].position;
+
+          if (position) {
+            drawDevice(deviceAddress, position.x, position.y, 'blue');
+          } else {
+            // If position is null, the device is considered inactive or turned off
+            // You can choose to not draw it or draw it differently based on your preference
+            drawDevice(deviceAddress, 0, 0, 'gray');
+          }
+        }
+      }
+    }
+
+    // Function to draw a device on the canvas
+    function drawDevice(device, x, y, color = 'red') {
+      ctx.beginPath();
+      ctx.arc(x, y, 10, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = 'black';
+      ctx.fillText(device, x - 10, y - 15);
     }
   </script>
 </body>
