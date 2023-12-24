@@ -96,8 +96,124 @@ io.on('connection', (socket) => {
     console.log('User disconnected');
   });
 });
+// Trilateration function and helper functions
+function trilaterate(positions, distances) {
+  // ... (unchanged trilateration function)
+}
 
+function subtract(a, b) {
+  return { x: a.x - b.x, y: a.y - b.y };
+}
+
+function add(a, b) {
+  return { x: a.x + b.x, y: a.y + b.y };
+}
+
+function multiply(v, scalar) {
+  return { x: v.x * scalar, y: v.y * scalar };
+}
+
+function magnitude(v) {
+  return Math.sqrt(v.x * v.x + v.y * v.y);
+}
+
+function normalize(v) {
+  const mag = magnitude(v);
+  return { x: v.x / mag, y: v.y / mag };
+}
+
+// Calculate distance from RSSI value
+function calculateDistance(rssi) {
+  const txPower = -35; // adjusted transmitted power in dBm at 0 meter
+  const n = 2.0; // path loss exponent
+
+  // Calculate distance using log-distance path loss model
+  const distance = Math.pow(10, ((txPower - parseInt(rssi)) / (10 * n)));
+
+  return distance;
+}
+
+// Calculate mobile position
 function calculateMobilePosition(deviceAddress) {
+  // Trilateration function and helper functions
+  function trilaterate(positions, distances) {
+    function dot(v1, v2) {
+      return v1.x * v2.x + v1.y * v2.y;
+    }
+
+    function subtract(a, b) {
+      return { x: a.x - b.x, y: a.y - b.y };
+    }
+
+    function add(a, b) {
+      return { x: a.x + b.x, y: a.y + b.y };
+    }
+
+    function multiply(v, scalar) {
+      return { x: v.x * scalar, y: v.y * scalar };
+    }
+
+    function magnitude(v) {
+      return Math.sqrt(v.x * v.x + v.y * v.y);
+    }
+
+    function normalize(v) {
+      const mag = magnitude(v);
+      return { x: v.x / mag, y: v.y / mag };
+    }
+
+    const p1 = positions[0];
+    const p2 = positions[1];
+    const p3 = positions[2];
+
+    const ex = normalize(subtract(p2, p1)); // unit vector from p1 to p2
+    const i = dot(ex, subtract(p3, p1));
+    const ey = normalize(subtract(subtract(p3, p1), multiply(ex, i))); // unit vector perpendicular to ex
+    const d = magnitude(subtract(p2, p1));
+    const j = dot(ey, subtract(p3, p1));
+
+    // Barycentric coordinates
+    const x = (Math.pow(distances[0], 2) - Math.pow(distances[1], 2) + Math.pow(d, 2)) / (2 * d);
+    const y = (Math.pow(distances[0], 2) - Math.pow(distances[2], 2) + Math.pow(i, 2) + Math.pow(j, 2)) / (2 * j) - (i / j) * x;
+
+    // Result coordinates
+    const result = add(p1, add(multiply(ex, x), multiply(ey, y)));
+
+    return result;
+  }
+
+  function subtract(a, b) {
+    return { x: a.x - b.x, y: a.y - b.y };
+  }
+
+  function add(a, b) {
+    return { x: a.x + b.x, y: a.y + b.y };
+  }
+
+  function multiply(v, scalar) {
+    return { x: v.x * scalar, y: v.y * scalar };
+  }
+
+  function magnitude(v) {
+    return Math.sqrt(v.x * v.x + v.y * v.y);
+  }
+
+  function normalize(v) {
+    const mag = magnitude(v);
+    return { x: v.x / mag, y: v.y / mag };
+  }
+
+  // Calculate distance from RSSI value
+  function calculateDistance(rssi) {
+    const txPower = -35; // adjusted transmitted power in dBm at 0 meter
+    const n = 2.0; // path loss exponent
+
+    // Calculate distance using log-distance path loss model
+    const distance = Math.pow(10, ((txPower - parseInt(rssi)) / (10 * n)));
+
+    return distance;
+  }
+
   const signals = bleData[deviceAddress].rssi;
 
   console.log(`Received signals for ${deviceAddress}:`, signals);
@@ -109,42 +225,74 @@ function calculateMobilePosition(deviceAddress) {
     return;
   }
 
-  // Calculate total RSSI
-  const totalRssi = signals.reduce((acc, signal) => acc + Math.abs(parseInt(signal.rssi, 10)), 0);
+  // Filter signals from different stationary devices
+  const filteredSignals = signals.filter(signal => stationaryDevices[signal.esp32Address]);
 
-  // Check if totalRssi is zero
-  if (totalRssi === 0) {
+  // Check if there are at least 3 valid signals
+  if (filteredSignals.length < 3) {
+    // Insufficient signals, set position to null
     bleData[deviceAddress].position = null;
-    console.log(`Total RSSI is zero for ${deviceAddress}. Position set to null.`);
     return;
   }
 
-  let weightedX = 0;
-  let weightedY = 0;
+  // Perform trilateration for each set of three signals
+  const trilaterationResults = [];
 
-  signals.forEach((signal) => {
-    const stationaryPosition = stationaryDevices[signal.esp32Address];
-    if (!stationaryPosition) {
-      console.log(`Stationary position not found for ESP32 address: ${signal.esp32Address}`);
-      return;
+  let minAbsRssi = Infinity; // Initialize to a large value
+
+  for (let i = 0; i < filteredSignals.length - 2; i++) {
+    for (let j = i + 1; j < filteredSignals.length - 1; j++) {
+      for (let k = j + 1; k < filteredSignals.length; k++) {
+        const positions = [
+          stationaryDevices[filteredSignals[i].esp32Address],
+          stationaryDevices[filteredSignals[j].esp32Address],
+          stationaryDevices[filteredSignals[k].esp32Address],
+        ];
+        const distances = [
+          calculateDistance(filteredSignals[i].rssi),
+          calculateDistance(filteredSignals[j].rssi),
+          calculateDistance(filteredSignals[k].rssi),
+        ];
+
+        // Perform trilateration
+        const result = trilaterate(positions, distances);
+
+        // Check if the result is valid (not NaN)
+        if (!isNaN(result.x) && !isNaN(result.y)) {
+          trilaterationResults.push(result);
+
+          // Update minAbsRssi and corresponding result
+          const absRssiSum = Math.abs(filteredSignals[i].rssi) +
+            Math.abs(filteredSignals[j].rssi) +
+            Math.abs(filteredSignals[k].rssi);
+
+          if (absRssiSum < minAbsRssi) {
+            minAbsRssi = absRssiSum;
+            trilaterationResults.minRssiResult = result;
+          }
+        }
+      }
     }
+  }
 
-    console.log(`Processing signal:`, signal);
-    console.log(`Stationary position:`, stationaryPosition);
+  // Use the result with the minimum absolute RSSI value
+  const finalResult = trilaterationResults.minRssiResult;
 
-    if (stationaryPosition.x === undefined || stationaryPosition.y === undefined) {
-      console.log(`Invalid coordinates for ESP32 address: ${signal.esp32Address}`);
-      return;
-    }
-
-    const weight = Math.abs(parseInt(signal.rssi, 10)) / totalRssi;
-    console.log(`Weight for signal ${signal.rssi} from ${signal.esp32Address}:`, weight);
-    weightedX += weight * stationaryPosition.x;
-    weightedY += weight * stationaryPosition.y;
-  });
+  // Check if there are valid trilateration results
+  if (!finalResult || isNaN(finalResult.x) || isNaN(finalResult.y)) {
+    // No valid results, set position to null
+    bleData[deviceAddress].position = null;
+    return;
+  }
 
   // Update the mobile ESP32 position
-  bleData[deviceAddress].position = { x: weightedX, y: weightedY };
+  const canvasWidth = 600;
+  const canvasHeight = 500;
+  bleData[deviceAddress].position = {
+    x: Math.max(10, Math.min(canvasWidth - 10, finalResult.x)),
+    y: Math.max(10, Math.min(canvasHeight - 10, finalResult.y)),
+  };
+
   bleData[deviceAddress].lastUpdateTime = Date.now();
 
   console.log(`Updated position for ${deviceAddress}:`, bleData[deviceAddress].position);
@@ -152,6 +300,8 @@ function calculateMobilePosition(deviceAddress) {
   // Emit the updated mobile position to connected clients (sockets)
   io.emit('updateMobilePositions', { deviceAddress, position: bleData[deviceAddress].position });
 }
+
+// ... (Rest of your code)
 
 
 
