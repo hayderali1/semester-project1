@@ -13,9 +13,9 @@ const bleData = {};
 // Assign addresses to stationary ESP32 devices and their positions
 const stationaryDevices = {
   '3C:E9:0E:84:E7:F8': { x: 50, y: 50 },         // Top-left corner
-  'A4:CF:12:16:15:14': { x: 500, y: 50 },      // Top-right corner
-  'A4:CF:12:16:1B:A8': { x: 500, y: 450 },    // Bottom-right corner
-  '3C:61:05:28:C2:60': { x: 50, y: 450 },      // Bottom-left corner
+  'A4:CF:12:16:15:14': { x: 750, y: 50 },      // Top-right corner
+  'A4:CF:12:16:1B:A8': { x: 750, y: 550 },    // Bottom-right corner
+  '3C:61:05:28:C2:60': { x: 50, y: 550 },      // Bottom-left corner
 };
 
 app.use(cors()); // Allow cross-origin requests
@@ -218,8 +218,8 @@ function calculateMobilePosition(deviceAddress) {
   }
 
   // Update the mobile ESP32 position
-  const canvasWidth = 600;
-  const canvasHeight = 500;
+  const canvasWidth = 900;
+  const canvasHeight = 590;
   bleData[deviceAddress].position = {
     x: Math.max(10, Math.min(canvasWidth - 10, finalResult.x)),
     y: Math.max(10, Math.min(canvasHeight - 10, finalResult.y)),

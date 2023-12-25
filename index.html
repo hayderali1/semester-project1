@@ -23,7 +23,7 @@
 </head>
 <body>
   <h1>ESP32 Position Tracking</h1>
-  <canvas id="positionCanvas" width="600" height="500"></canvas>
+  <canvas id="positionCanvas" width="900" height="590"></canvas>
 
   <!-- Include Socket.IO library -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.1.2/socket.io.js"></script>
@@ -65,18 +65,18 @@
       }
 
       // Draw mobile devices
-for (const deviceAddress in mobileDevices) {
-  if (mobileDevices.hasOwnProperty(deviceAddress)) {
-    const position = mobileDevices[deviceAddress].position;
+      for (const deviceAddress in mobileDevices) {
+        if (mobileDevices.hasOwnProperty(deviceAddress)) {
+          const position = mobileDevices[deviceAddress].position;
 
-    if (position) {
-      drawDevice(deviceAddress, position.x, position.y, 'blue');
-    } else {
-      // If position is null, skip drawing the device
-      continue;
-    }
-  }
-}
+          if (position) {
+            drawDevice(deviceAddress, position.x, position.y, 'blue');
+          } else {
+            // If position is null, skip drawing the device
+            continue;
+          }
+        }
+      }
     }
 
     // Function to draw a device on the canvas
