@@ -2,6 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const http = require('http');
 const cors = require('cors');
+const io = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
@@ -16,7 +17,6 @@ const stationaryDevices = {
   'A4:CF:12:16:1B:A8': { x: 500, y: 450 },    // Bottom-right corner
   '3C:61:05:28:C2:60': { x: 50, y: 450 },      // Bottom-left corner
 };
-
 
 app.use(cors()); // Allow cross-origin requests
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -67,7 +67,7 @@ setInterval(() => {
     }
   }
   // Emit the updated data to connected clients (sockets) after removing inactive devices
-  io.emit('updateCanvas', { stationaryDevices, bleData });
+  socketServer.emit('updateCanvas', { stationaryDevices, bleData });
 }, 1000);
 
 // Set an interval to update and emit mobile position continuously
@@ -80,13 +80,13 @@ setInterval(() => {
   }
 
   // Emit updated positions to connected clients (sockets)
-  io.emit('updateMobilePositions', bleData);
+  socketServer.emit('updateMobilePositions', bleData);
   console.log('Updated positions:', bleData);
 }, 1000); // Update every 1 second
 
-const io = require('socket.io')(server);
+const socketServer = io(server);
 
-io.on('connection', (socket) => {
+socketServer.on('connection', (socket) => {
   console.log('A user connected');
 
   // Emit the initial data to the connected client
@@ -96,90 +96,11 @@ io.on('connection', (socket) => {
     console.log('User disconnected');
   });
 });
-// Trilateration function and helper functions
+
+// Trilateration function
 function trilaterate(positions, distances) {
-  // ... (unchanged trilateration function)
-}
-
-function subtract(a, b) {
-  return { x: a.x - b.x, y: a.y - b.y };
-}
-
-function add(a, b) {
-  return { x: a.x + b.x, y: a.y + b.y };
-}
-
-function multiply(v, scalar) {
-  return { x: v.x * scalar, y: v.y * scalar };
-}
-
-function magnitude(v) {
-  return Math.sqrt(v.x * v.x + v.y * v.y);
-}
-
-function normalize(v) {
-  const mag = magnitude(v);
-  return { x: v.x / mag, y: v.y / mag };
-}
-
-// Calculate distance from RSSI value
-function calculateDistance(rssi) {
-  const txPower = -35; // adjusted transmitted power in dBm at 0 meter
-  const n = 2.0; // path loss exponent
-
-  // Calculate distance using log-distance path loss model
-  const distance = Math.pow(10, ((txPower - parseInt(rssi)) / (10 * n)));
-
-  return distance;
-}
-
-// Calculate mobile position
-function calculateMobilePosition(deviceAddress) {
-  // Trilateration function and helper functions
-  function trilaterate(positions, distances) {
-    function dot(v1, v2) {
-      return v1.x * v2.x + v1.y * v2.y;
-    }
-
-    function subtract(a, b) {
-      return { x: a.x - b.x, y: a.y - b.y };
-    }
-
-    function add(a, b) {
-      return { x: a.x + b.x, y: a.y + b.y };
-    }
-
-    function multiply(v, scalar) {
-      return { x: v.x * scalar, y: v.y * scalar };
-    }
-
-    function magnitude(v) {
-      return Math.sqrt(v.x * v.x + v.y * v.y);
-    }
-
-    function normalize(v) {
-      const mag = magnitude(v);
-      return { x: v.x / mag, y: v.y / mag };
-    }
-
-    const p1 = positions[0];
-    const p2 = positions[1];
-    const p3 = positions[2];
-
-    const ex = normalize(subtract(p2, p1)); // unit vector from p1 to p2
-    const i = dot(ex, subtract(p3, p1));
-    const ey = normalize(subtract(subtract(p3, p1), multiply(ex, i))); // unit vector perpendicular to ex
-    const d = magnitude(subtract(p2, p1));
-    const j = dot(ey, subtract(p3, p1));
-
-    // Barycentric coordinates
-    const x = (Math.pow(distances[0], 2) - Math.pow(distances[1], 2) + Math.pow(d, 2)) / (2 * d);
-    const y = (Math.pow(distances[0], 2) - Math.pow(distances[2], 2) + Math.pow(i, 2) + Math.pow(j, 2)) / (2 * j) - (i / j) * x;
-
-    // Result coordinates
-    const result = add(p1, add(multiply(ex, x), multiply(ey, y)));
-
-    return result;
+  function dot(v1, v2) {
+    return v1.x * v2.x + v1.y * v2.y;
   }
 
   function subtract(a, b) {
@@ -203,17 +124,28 @@ function calculateMobilePosition(deviceAddress) {
     return { x: v.x / mag, y: v.y / mag };
   }
 
-  // Calculate distance from RSSI value
-  function calculateDistance(rssi) {
-    const txPower = -35; // adjusted transmitted power in dBm at 0 meter
-    const n = 2.0; // path loss exponent
+  const p1 = positions[0];
+  const p2 = positions[1];
+  const p3 = positions[2];
 
-    // Calculate distance using log-distance path loss model
-    const distance = Math.pow(10, ((txPower - parseInt(rssi)) / (10 * n)));
+  const ex = normalize(subtract(p2, p1)); // unit vector from p1 to p2
+  const i = dot(ex, subtract(p3, p1));
+  const ey = normalize(subtract(subtract(p3, p1), multiply(ex, i))); // unit vector perpendicular to ex
+  const d = magnitude(subtract(p2, p1));
+  const j = dot(ey, subtract(p3, p1));
 
-    return distance;
-  }
+  // Barycentric coordinates
+  const x = (Math.pow(distances[0], 2) - Math.pow(distances[1], 2) + Math.pow(d, 2)) / (2 * d);
+  const y = (Math.pow(distances[0], 2) - Math.pow(distances[2], 2) + Math.pow(i, 2) + Math.pow(j, 2)) / (2 * j) - (i / j) * x;
 
+  // Result coordinates
+  const result = add(p1, add(multiply(ex, x), multiply(ey, y)));
+
+  return result;
+}
+
+// Calculate mobile position
+function calculateMobilePosition(deviceAddress) {
   const signals = bleData[deviceAddress].rssi;
 
   console.log(`Received signals for ${deviceAddress}:`, signals);
@@ -298,12 +230,19 @@ function calculateMobilePosition(deviceAddress) {
   console.log(`Updated position for ${deviceAddress}:`, bleData[deviceAddress].position);
 
   // Emit the updated mobile position to connected clients (sockets)
-  io.emit('updateMobilePositions', { deviceAddress, position: bleData[deviceAddress].position });
+  socketServer.emit('updateMobilePositions', { deviceAddress, position: bleData[deviceAddress].position });
 }
 
-// ... (Rest of your code)
+// Calculate distance from RSSI value
+function calculateDistance(rssi) {
+  const txPower = -35; // adjusted transmitted power in dBm at 0 meter
+  const n = 2.0; // path loss exponent
 
+  // Calculate distance using log-distance path loss model
+  const distance = Math.pow(10, ((txPower - parseInt(rssi)) / (10 * n)));
 
+  return distance;
+}
 
 server.listen(3000, '0.0.0.0', () => {
   console.log('Node.js server is running on port 3000');
