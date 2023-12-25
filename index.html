@@ -65,19 +65,18 @@
       }
 
       // Draw mobile devices
-      for (const deviceAddress in mobileDevices) {
-        if (mobileDevices.hasOwnProperty(deviceAddress)) {
-          const position = mobileDevices[deviceAddress].position;
+for (const deviceAddress in mobileDevices) {
+  if (mobileDevices.hasOwnProperty(deviceAddress)) {
+    const position = mobileDevices[deviceAddress].position;
 
-          if (position) {
-            drawDevice(deviceAddress, position.x, position.y, 'blue');
-          } else {
-            // If position is null, the device is considered inactive or turned off
-            // You can choose to not draw it or draw it differently based on your preference
-            drawDevice(deviceAddress, 0, 0, 'gray');
-          }
-        }
-      }
+    if (position) {
+      drawDevice(deviceAddress, position.x, position.y, 'blue');
+    } else {
+      // If position is null, skip drawing the device
+      continue;
+    }
+  }
+}
     }
 
     // Function to draw a device on the canvas

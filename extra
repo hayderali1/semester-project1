@@ -1,0 +1,15 @@
+     // Draw mobile devices
+for (const deviceAddress in mobileDevices) {
+  if (mobileDevices.hasOwnProperty(deviceAddress)) {
+    const position = mobileDevices[deviceAddress].position;
+
+    if (position && typeof position.x !== 'undefined' && typeof position.y !== 'undefined') {
+      // Only draw if x and y positions are available
+      drawDevice(deviceAddress, position.x, position.y, 'blue');
+    } else {
+      // If position is null or x and y are undefined, the device is considered inactive or turned off
+      // You can choose to not draw it or draw it differently based on your preference
+      // In this case, it won't be drawn at all
+    }
+  }
+}
