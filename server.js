@@ -145,24 +145,51 @@ function trilaterate(positions, distances) {
 }
 
 // Calculate mobile position
+// Constant for exponential smoothing
+
+
+// Constant for exponential smoothing
+const SMOOTHING_FACTOR = 0.2;
+
+// Calculate mobile position with exponential smoothing
 function calculateMobilePosition(deviceAddress) {
   const signals = bleData[deviceAddress].rssi;
 
   console.log(`Received signals for ${deviceAddress}:`, signals);
 
   // Check if there are valid signals
-  if (signals.length === 0) {
-    // No signals, set position to null
+  if (signals.length < 4) {
+    // Not enough signals, set position to null
     bleData[deviceAddress].position = null;
     return;
   }
 
-  // Filter signals from different stationary devices
-  const filteredSignals = signals.filter(signal => stationaryDevices[signal.esp32Address]);
+  // Find all combinations of four signals from different stationary devices
+  const signalCombinations = [];
 
-  // Check if there are at least 4 valid signals
-  if (filteredSignals.length < 4) {
-    // Insufficient signals, set position to null
+  for (let i = 0; i < signals.length - 3; i++) {
+    for (let j = i + 1; j < signals.length - 2; j++) {
+      for (let k = j + 1; k < signals.length - 1; k++) {
+        for (let l = k + 1; l < signals.length; l++) {
+          const espAddresses = new Set([
+            signals[i].esp32Address,
+            signals[j].esp32Address,
+            signals[k].esp32Address,
+            signals[l].esp32Address,
+          ]);
+
+          if (espAddresses.size === 4) {
+            // This combination has signals from four different stationary devices
+            signalCombinations.push([signals[i], signals[j], signals[k], signals[l]]);
+          }
+        }
+      }
+    }
+  }
+
+  // Check if there are valid signal combinations
+  if (signalCombinations.length === 0) {
+    // No valid combinations, set position to null
     bleData[deviceAddress].position = null;
     return;
   }
@@ -170,50 +197,21 @@ function calculateMobilePosition(deviceAddress) {
   // Perform trilateration for each set of four signals
   const trilaterationResults = [];
 
-  let minAbsRssi = Infinity; // Initialize to a large value
+  for (const combination of signalCombinations) {
+    const positions = combination.map(signal => stationaryDevices[signal.esp32Address]);
+    const distances = combination.map(signal => calculateDistance(signal.rssi));
 
-  for (let i = 0; i < filteredSignals.length - 3; i++) {
-    for (let j = i + 1; j < filteredSignals.length - 2; j++) {
-      for (let k = j + 1; k < filteredSignals.length - 1; k++) {
-        for (let l = k + 1; l < filteredSignals.length; l++) {
-          const positions = [
-            stationaryDevices[filteredSignals[i].esp32Address],
-            stationaryDevices[filteredSignals[j].esp32Address],
-            stationaryDevices[filteredSignals[k].esp32Address],
-            stationaryDevices[filteredSignals[l].esp32Address],
-          ];
-          const distances = [
-            calculateDistance(filteredSignals[i].rssi),
-            calculateDistance(filteredSignals[j].rssi),
-            calculateDistance(filteredSignals[k].rssi),
-            calculateDistance(filteredSignals[l].rssi),
-          ];
+    // Perform trilateration
+    const result = trilaterate(positions, distances);
 
-          // Perform trilateration
-          const result = trilaterate(positions, distances);
-
-          // Check if the result is valid (not NaN)
-          if (!isNaN(result.x) && !isNaN(result.y)) {
-            trilaterationResults.push(result);
-
-            // Update minAbsRssi and corresponding result
-            const absRssiSum = Math.abs(filteredSignals[i].rssi) +
-              Math.abs(filteredSignals[j].rssi) +
-              Math.abs(filteredSignals[k].rssi) +
-              Math.abs(filteredSignals[l].rssi);
-
-            if (absRssiSum < minAbsRssi) {
-              minAbsRssi = absRssiSum;
-              trilaterationResults.minRssiResult = result;
-            }
-          }
-        }
-      }
+    // Check if the result is valid (not NaN)
+    if (!isNaN(result.x) && !isNaN(result.y)) {
+      trilaterationResults.push(result);
     }
   }
 
-  // Use the result with the minimum absolute RSSI value
-  const finalResult = trilaterationResults.minRssiResult;
+  // Use the first valid trilateration result
+  const finalResult = trilaterationResults[0];
 
   // Check if there are valid trilateration results
   if (!finalResult || isNaN(finalResult.x) || isNaN(finalResult.y)) {
@@ -222,12 +220,24 @@ function calculateMobilePosition(deviceAddress) {
     return;
   }
 
-  // Update the mobile ESP32 position
+  // Apply exponential smoothing
   const canvasWidth = 900;
   const canvasHeight = 590;
-  bleData[deviceAddress].position = {
+
+  const currentPosition = bleData[deviceAddress].position || {
     x: Math.max(10, Math.min(canvasWidth - 10, finalResult.x)),
     y: Math.max(10, Math.min(canvasHeight - 10, finalResult.y)),
+  };
+
+  const smoothedPosition = {
+    x: currentPosition.x + SMOOTHING_FACTOR * (finalResult.x - currentPosition.x),
+    y: currentPosition.y + SMOOTHING_FACTOR * (finalResult.y - currentPosition.y),
+  };
+
+  // Update the mobile ESP32 position, ensuring it stays within the canvas dimensions
+  bleData[deviceAddress].position = {
+    x: Math.max(10, Math.min(canvasWidth - 10, smoothedPosition.x)),
+    y: Math.max(10, Math.min(canvasHeight - 10, smoothedPosition.y)),
   };
 
   bleData[deviceAddress].lastUpdateTime = Date.now();
@@ -237,6 +247,8 @@ function calculateMobilePosition(deviceAddress) {
   // Emit the updated mobile position to connected clients (sockets)
   socketServer.emit('updateMobilePositions', { deviceAddress, position: bleData[deviceAddress].position });
 }
+
+
 
 // Calculate distance from RSSI value
 function calculateDistance(rssi) {
