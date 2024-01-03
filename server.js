@@ -143,19 +143,20 @@ function trilaterate(positions, distances) {
 
   return result;
 }
-
 // Calculate mobile position
 // Constant for exponential smoothing
 
 
 // Constant for exponential smoothing
 const SMOOTHING_FACTOR = 0.2;
-
 // Calculate mobile position with exponential smoothing
+// Global set to keep track of unique signals
+const uniqueSignalsSet = new Set();
+
 function calculateMobilePosition(deviceAddress) {
   const signals = bleData[deviceAddress].rssi;
 
-  console.log(`Received signals for ${deviceAddress}:`, signals);
+  // console.log(`Received signals for ${deviceAddress}:`, signals);
 
   // Check if there are valid signals
   if (signals.length < 4) {
@@ -164,74 +165,68 @@ function calculateMobilePosition(deviceAddress) {
     return;
   }
 
-  // Find all combinations of four signals from different stationary devices
-  const signalCombinations = [];
+  // Filter unique signals for each ESP32 address
+  const uniqueSignals = [];
+  const processedAddresses = new Set();
 
-  for (let i = 0; i < signals.length - 3; i++) {
-    for (let j = i + 1; j < signals.length - 2; j++) {
-      for (let k = j + 1; k < signals.length - 1; k++) {
-        for (let l = k + 1; l < signals.length; l++) {
-          const espAddresses = new Set([
-            signals[i].esp32Address,
-            signals[j].esp32Address,
-            signals[k].esp32Address,
-            signals[l].esp32Address,
-          ]);
+  for (const signal of signals) {
+    const absRssi = Math.abs(parseInt(signal.rssi)); // Take the absolute value of RSSI
+    signal.absRssi = absRssi; // Store the absolute RSSI in the signal object
 
-          if (espAddresses.size === 4) {
-            // This combination has signals from four different stationary devices
-            signalCombinations.push([signals[i], signals[j], signals[k], signals[l]]);
-          }
-        }
-      }
+    if (!processedAddresses.has(signal.esp32Address)) {
+      uniqueSignals.push(signal);
+      processedAddresses.add(signal.esp32Address);
+    }
+
+    if (uniqueSignals.length === 4) {
+      break; // Break if we have signals from four different addresses
     }
   }
 
-  // Check if there are valid signal combinations
-  if (signalCombinations.length === 0) {
-    // No valid combinations, set position to null
+  console.log(`Unique signals for ${deviceAddress}:`, uniqueSignals);
+
+  // Check if we have enough unique signals
+  if (uniqueSignals.length < 4) {
+    // Not enough unique signals, set position to null
     bleData[deviceAddress].position = null;
     return;
   }
 
-  // Perform trilateration for each set of four signals
-  const trilaterationResults = [];
+  // Sort unique signals based on absolute RSSI in ascending order
+  uniqueSignals.sort((a, b) => a.absRssi - b.absRssi);
 
-  for (const combination of signalCombinations) {
-    const positions = combination.map(signal => stationaryDevices[signal.esp32Address]);
-    const distances = combination.map(signal => calculateDistance(signal.rssi));
+  // Perform trilateration with sorted unique signals
+  const positions = uniqueSignals.map(signal => stationaryDevices[signal.esp32Address]);
+  const distances = uniqueSignals.map(signal => calculateDistance(signal.rssi));
 
-    // Perform trilateration
-    const result = trilaterate(positions, distances);
+  // Perform trilateration
+  const result = trilaterate(positions, distances);
 
-    // Check if the result is valid (not NaN)
-    if (!isNaN(result.x) && !isNaN(result.y)) {
-      trilaterationResults.push(result);
-    }
-  }
-
-  // Use the first valid trilateration result
-  const finalResult = trilaterationResults[0];
-
-  // Check if there are valid trilateration results
-  if (!finalResult || isNaN(finalResult.x) || isNaN(finalResult.y)) {
-    // No valid results, set position to null
+  // Check if the result is valid (not NaN)
+  if (isNaN(result.x) || isNaN(result.y)) {
+    // Invalid result, set position to null
     bleData[deviceAddress].position = null;
     return;
   }
+
+  // Find the address with the lowest absolute RSSI
+  const lowestAbsRssiAddress = uniqueSignals[0].esp32Address;
 
   // Apply exponential smoothing
   const canvasWidth = 900;
   const canvasHeight = 590;
 
   const currentPosition = bleData[deviceAddress].position || {
-    x: Math.max(10, Math.min(canvasWidth - 10, finalResult.x)),
-    y: Math.max(10, Math.min(canvasHeight - 10, finalResult.y)),
+    x: Math.max(10, Math.min(canvasWidth - 10, result.x)),
+    y: Math.max(10, Math.min(canvasHeight - 10, result.y)),
   };
 
+  const targetPosition = stationaryDevices[lowestAbsRssiAddress];
+
+  // Move the current position closer to the target position
   const smoothedPosition = {
-    x: currentPosition.x + SMOOTHING_FACTOR * (finalResult.x - currentPosition.x),
-    y: currentPosition.y + SMOOTHING_FACTOR * (finalResult.y - currentPosition.y),
+    x: currentPosition.x + SMOOTHING_FACTOR * (targetPosition.x - currentPosition.x),
+    y: currentPosition.y + SMOOTHING_FACTOR * (targetPosition.y - currentPosition.y),
   };
 
   // Update the mobile ESP32 position, ensuring it stays within the canvas dimensions
@@ -247,7 +242,6 @@ function calculateMobilePosition(deviceAddress) {
   // Emit the updated mobile position to connected clients (sockets)
   socketServer.emit('updateMobilePositions', { deviceAddress, position: bleData[deviceAddress].position });
 }
-
 
 
 // Calculate distance from RSSI value
